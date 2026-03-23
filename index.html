@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Driving VR – AR City</title>
+<title>Driving VR – AR City Moving Camera</title>
 <style>
     body, html {
         margin: 0;
@@ -11,7 +11,7 @@
         background: black;
     }
     #video {
-        display: none; /* hide video, we draw it manually */
+        display: none; /* we draw it manually */
     }
     #vr {
         position: absolute;
@@ -48,8 +48,8 @@ window.onresize = resize;
 let yaw = 0, pitch = 0;
 window.addEventListener("deviceorientation", e => {
     if (e.gamma != null && e.beta != null) {
-        yaw = e.gamma / 40;
-        pitch = e.beta / 60;
+        yaw = e.gamma / 40;   // left/right tilt
+        pitch = e.beta / 60;  // forward/back tilt
     }
 });
 
@@ -90,10 +90,7 @@ function draw() {
 
     ctx.clearRect(0, 0, w, h);
 
-    // LEFT EYE
     drawEye(0, half, h, -0.5, video);
-
-    // RIGHT EYE
     drawEye(half, half, h, 0.5, video);
 
     requestAnimationFrame(draw);
@@ -103,18 +100,34 @@ function drawEye(xOffset, w, h, eyeOffset, video) {
     ctx.save();
     ctx.translate(xOffset, 0);
 
-    // Draw camera feed into this half
-    ctx.drawImage(video, 0, 0, w, h);
+    // MOVING CAMERA FEED
+    const camShiftX = yaw * 80;
+    const camShiftY = pitch * 60;
+    const camScale = 1.15;
 
-    // Darken slightly for contrast
+    ctx.save();
+    ctx.translate(camShiftX, camShiftY);
+    ctx.scale(camScale, camScale);
+
+    ctx.drawImage(
+        video,
+        - (w * (camScale - 1)) / 2,
+        - (h * (camScale - 1)) / 2,
+        w,
+        h
+    );
+
+    ctx.restore();
+
+    // Darken slightly
     ctx.fillStyle = "rgba(0,0,20,0.25)";
     ctx.fillRect(0, 0, w, h);
 
-    // Ground plane
+    // Ground
     ctx.fillStyle = "rgba(10, 10, 30, 0.8)";
     ctx.fillRect(0, h * 0.8, w, h * 0.2);
 
-    // Perspective road lines
+    // Road lines
     ctx.strokeStyle = "rgba(80,80,120,0.8)";
     ctx.lineWidth = 2;
     for (let i = -2; i <= 2; i++) {
@@ -125,7 +138,7 @@ function drawEye(xOffset, w, h, eyeOffset, video) {
         ctx.stroke();
     }
 
-    // Buildings
+    // BUILDINGS
     buildings.forEach(b => {
         const base = project(b.x, 0, b.z, eyeOffset, w, h);
         const top = project(b.x, b.h, b.z, eyeOffset, w, h);
