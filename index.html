@@ -1,35 +1,246 @@
-let shootPressed = false;
-let reloadPressed = false;
-let flashlightPressed = false;
-let weaponNext = false;
-let weaponPrev = false;
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR Horror Shooter – PS5 Controller + Gyro</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:black; touch-action:manipulation; }
+  #vr { position:absolute; width:100%; height:100%; }
+</style>
+</head>
+<body>
+<canvas id="vr"></canvas>
 
-let moveX = 0;
-let moveY = 0;
-let turnX = 0;
-let turnY = 0;
+<script>
+const canvas = document.getElementById("vr");
+const ctx = canvas.getContext("2d");
 
-function readController() {
-    const pads = navigator.getGamepads();
-    for (let gp of pads) {
-        if (!gp) continue;
-        if (!gp.id.includes("DualSense")) continue;
+function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
+resize(); addEventListener("resize",resize);
 
-        // BUTTONS
-        shootPressed = gp.buttons[7].pressed;   // R2
-        reloadPressed = gp.buttons[2].pressed;  // Square
-        flashlightPressed = gp.buttons[3].pressed; // Triangle
+// ------------------ GYRO ------------------
+let yaw=0, pitch=0, havePerm=false;
 
-        weaponNext = gp.buttons[15].pressed; // D-pad right
-        weaponPrev = gp.buttons[14].pressed; // D-pad left
-
-        // STICKS
-        moveX = gp.axes[0];  // left stick X
-        moveY = gp.axes[1];  // left stick Y
-
-        turnX = gp.axes[2];  // right stick X
-        turnY = gp.axes[3];  // right stick Y
-
-        return;
-    }
+function requestMotion(){
+  if(typeof DeviceOrientationEvent!=="undefined" &&
+     typeof DeviceOrientationEvent.requestPermission==="function"){
+    DeviceOrientationEvent.requestPermission().then(state=>{
+      if(state==="granted"){
+        havePerm=true;
+        addEventListener("deviceorientation",onOrient);
+      }
+    });
+  } else {
+    havePerm=true;
+    addEventListener("deviceorientation",onOrient);
+  }
 }
+
+function onOrient(e){
+  if(e.gamma!=null && e.beta!=null){
+    yaw = e.gamma/30;
+    pitch = (e.beta-45)/40;
+  }
+}
+
+// ------------------ PS5 CONTROLLER ------------------
+let shootPressed=false, reloadPressed=false, flashlightPressed=false;
+let weaponNext=false, weaponPrev=false;
+let moveX=0, moveY=0, turnX=0, turnY=0;
+
+function readController(){
+  const pads=navigator.getGamepads();
+  for(let gp of pads){
+    if(!gp) continue;
+    if(!gp.id.includes("DualSense")) continue;
+
+    shootPressed = gp.buttons[7].pressed;   // R2
+    reloadPressed = gp.buttons[2].pressed;  // Square
+    flashlightPressed = gp.buttons[3].pressed; // Triangle
+    weaponNext = gp.buttons[15].pressed; // D-pad right
+    weaponPrev = gp.buttons[14].pressed; // D-pad left
+
+    moveX = gp.axes[0];
+    moveY = gp.axes[1];
+    turnX = gp.axes[2];
+    turnY = gp.axes[3];
+    return;
+  }
+}
+
+// ------------------ GAME STATE ------------------
+let playerZ=0, speed=0.08, health=100, score=0;
+let flashlightOn=true;
+
+const enemies=[];
+function spawnEnemy(){
+  enemies.push({
+    x:(Math.random()*2-1)*2.5,
+    z:playerZ+25+Math.random()*25,
+    alive:true
+  });
+}
+for(let i=0;i<10;i++) spawnEnemy();
+
+function reload(){ /* placeholder */ }
+function toggleFlashlight(){ flashlightOn=!flashlightOn; }
+function nextWeapon(){ /* placeholder */ }
+function prevWeapon(){ /* placeholder */ }
+
+// ------------------ PROJECTION ------------------
+function project(x,y,z,eyeOffset,w,h){
+  const fov=1.2;
+  const zx=x-eyeOffset-yaw*1.2;
+  const zy=z-playerZ+1;
+  const scale=fov/zy;
+  const sx=w/2 + zx*scale*w*0.15;
+  const sy=h*0.7 - y*scale*h*0.3 + pitch*80;
+  return {x:sx,y:sy,z:zy};
+}
+
+// ------------------ MAIN DRAW ------------------
+let justShot=false;
+
+addEventListener("touchstart",()=>{
+  if(!havePerm) requestMotion();
+  justShot=true;
+});
+
+function draw(){
+  readController();
+  if(shootPressed) justShot=true;
+  if(flashlightPressed) toggleFlashlight();
+
+  const w=canvas.width, h=canvas.height, half=w/2;
+  playerZ+=speed;
+  if(Math.random()<0.02) spawnEnemy();
+
+  ctx.clearRect(0,0,w,h);
+
+  drawEye(0,half,h,-0.5);
+  drawEye(half,half,h,0.5);
+
+  justShot=false;
+  requestAnimationFrame(draw);
+}
+
+function drawEye(xOffset,w,h,eyeOffset){
+  ctx.save();
+  ctx.translate(xOffset,0);
+
+  ctx.fillStyle="#020208";
+  ctx.fillRect(0,0,w,h);
+
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,"#020208");
+  grad.addColorStop(1,"#101018");
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,w,h);
+
+  ctx.fillStyle="#151515";
+  ctx.beginPath();
+  ctx.moveTo(w*0.3,h*0.8);
+  ctx.lineTo(w*0.7,h*0.8);
+  ctx.lineTo(w*0.55,h*0.45);
+  ctx.lineTo(w*0.45,h*0.45);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle="#404040";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(w/2,h*0.8);
+  ctx.lineTo(w/2,h*0.5);
+  ctx.stroke();
+
+  enemies.forEach(e=>{
+    if(!e.alive) return;
+    const dz=e.z-playerZ;
+    if(dz<0.5){ e.alive=false; health-=10; return; }
+    if(dz>80) return;
+
+    const p=project(e.x,1.5,e.z,eyeOffset,w,h);
+    const size=40/p.z*10;
+
+    ctx.fillStyle="#700000";
+    ctx.beginPath();
+    ctx.ellipse(p.x,p.y,size*0.6,size,0,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle="#ff4444";
+    ctx.beginPath();
+    ctx.arc(p.x-size*0.2,p.y-size*0.3,size*0.15,0,Math.PI*2);
+    ctx.arc(p.x+size*0.2,p.y-size*0.3,size*0.15,0,Math.PI*2);
+    ctx.fill();
+
+    const cx=w/2, cy=h*0.6;
+    if(justShot &&
+       Math.abs(p.x-cx)<size*0.7 &&
+       Math.abs(p.y-cy)<size*0.7){
+      e.alive=false;
+      score+=10;
+    }
+  });
+
+  if(flashlightOn){
+    ctx.save();
+    ctx.globalCompositeOperation="lighter";
+    ctx.fillStyle="rgba(255,255,200,0.08)";
+    const fx=w/2, fy=h*0.7;
+    ctx.beginPath();
+    ctx.moveTo(fx,fy);
+    ctx.lineTo(fx-200-yaw*200, fy-200-pitch*200);
+    ctx.lineTo(fx+200-yaw*200, fy-200-pitch*200);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.fillStyle="#202020";
+  ctx.beginPath();
+  const gunOffsetX=yaw*30;
+  ctx.moveTo(w*0.45+gunOffsetX,h*0.9);
+  ctx.lineTo(w*0.55+gunOffsetX,h*0.9);
+  ctx.lineTo(w*0.52+gunOffsetX,h*0.78);
+  ctx.lineTo(w*0.48+gunOffsetX,h*0.78);
+  ctx.closePath();
+  ctx.fill();
+
+  if(justShot){
+    ctx.fillStyle="#ffdd88";
+    ctx.beginPath();
+    ctx.arc(w/2+gunOffsetX,h*0.76,18,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  const cx=w/2, cy=h*0.6;
+  ctx.strokeStyle="#ffdddd";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(cx-10,cy); ctx.lineTo(cx+10,cy);
+  ctx.moveTo(cx,cy-10); ctx.lineTo(cx,cy+10);
+  ctx.stroke();
+
+  ctx.fillStyle="#ff4444";
+  ctx.font="14px sans-serif";
+  ctx.fillText("HEALTH: "+health,10,22);
+  ctx.fillStyle="#ffffff";
+  ctx.fillText("SCORE: "+score,10,40);
+
+  if(health<=0){
+    ctx.fillStyle="rgba(0,0,0,0.85)";
+    ctx.fillRect(0,0,w,h);
+    ctx.fillStyle="#ff4444";
+    ctx.font="26px sans-serif";
+    ctx.fillText("YOU DIED",w/2-70,h/2);
+    ctx.font="16px sans-serif";
+    ctx.fillText("reload page to restart",w/2-90,h/2+28);
+  }
+
+  ctx.restore();
+}
+
+draw();
+</script>
+</body>
+</html>
